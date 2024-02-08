@@ -1,0 +1,63 @@
+--- Create network for connecting postgresql to pgadmin using web interface --
+docker network create pg-network
+
+--- Run postgres container with a database in it ---
+docker run -it \
+    -e POSTGRES_USER="root" \
+    -e POSTGRES_PASSWORD="root" \
+    -e POSTGRES_DB="ny_taxi" \
+    -v $(pwd)/ny_taxi_postgres_data:/var/lib/postgresql/data \
+    -p 5432:5432 \
+    --network=pg-network \
+    --name pg-database \
+    postgres:16
+
+--- Connect to the database using pgcli ---
+$ pgcli -h localhost -p 5432 -u root -d ny_taxi
+
+--- Connect to the server using pgadmin4 ---
+docker run -it \
+    -e PGADMIN_DEFAULT_EMAIL="admin@admin.com" \
+    -e PGADMIN_DEFAULT_PASSWORD="root" \
+    -p 8080:80 \
+    --network=pg-network \
+    --name pgadmin \
+    dpage/pgadmin4
+
+--- Convert notebook to python file/script ---
+jupyter nbconvert --to=script upload-data.ipynb
+
+--- Ingest data using script ---
+python3 ingest_data.py \
+    --user=root \
+    --password=root \
+    --host=localhost \
+    --port=5432 \
+    --db=ny_taxi \
+    --table_name=yellow_taxi_trips \
+    --url="https://github.com/DataTalksClub/nyc-tlc-data/releases/download/green/green_tripdata_2019-09.csv.gz"
+
+--- Build the Dockerfile ---
+docker build -t taxi_ingest:v001 .
+
+--- Run the built docker file ---
+docker run -it \
+    --network=pg-network \
+    taxi_ingest:v001 \
+        --user=root \
+        --password=root \
+        --host=pg-database \
+        --port=5432 \
+        --db=ny_taxi \
+        --table_name=yellow_taxi_trips \
+        --url="https://github.com/DataTalksClub/nyc-tlc-data/releases/download/green/green_tripdata_2019-09.csv.gz"
+
+--- Ingest zones data using script ---
+python3 ingest_zones.py \
+    --user=root \
+    --password=root \
+    --host=localhost \
+    --port=5432 \
+    --db=ny_taxi \
+    --table_name=zones \
+    --url="https://s3.amazonaws.com/nyc-tlc/misc/taxi+_zone_lookup.csv"
